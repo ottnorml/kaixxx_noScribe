@@ -30,7 +30,9 @@
 
 ## Download, Installation, and Usage
 
-See the corresponding sections on my website: https://noscribe.de 
+See the corresponding sections on my website: https://noscribe.de
+
+For a local development setup on macOS (Apple Silicon), see [docs/getting-started.md](docs/getting-started.md).
 
 To run noScribe without its window in a Docker container (CPU or CUDA, for servers and batch jobs), see [docker/README.md](docker/README.md).
 
