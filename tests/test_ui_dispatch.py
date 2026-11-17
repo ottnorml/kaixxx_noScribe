@@ -180,3 +180,50 @@ def test_progress_lines_from_worker_replace_each_other():
         app._ui_tasks.get_nowait()()
 
     assert app.log_textbox.text == "Speaker identification\nsegmentation: 20%"
+
+
+def test_update_queue_controls_from_worker_is_queued_not_applied_inline():
+    """update_queue_controls must not touch the queue buttons on the worker
+    thread: like update_queue_table and set_progress it has to hand the work
+    to the UI thread, otherwise a cross-thread Tk call can corrupt Tcl/Tk
+    state and segfault the process on macOS."""
+    class FakeButton:
+        def __init__(self):
+            self.calls = []
+
+        def configure(self, *args, **kwargs):
+            self.calls.append(threading.get_ident())
+
+    class FakeQueue:
+        def get_running_jobs(self):
+            return []
+
+        def has_pending_jobs(self):
+            return False
+
+        def has_inactive_jobs(self):
+            return False
+
+    app = _app_stub()
+    app.queue = FakeQueue()
+    app.queue_run_btn = FakeButton()
+    app.queue_stop_btn = FakeButton()
+    app.queue_clear_btn = FakeButton()
+
+    worker = threading.Thread(target=lambda: app.update_queue_controls())
+    worker.start()
+    worker.join()
+
+    # Tk must not be read or written by the worker thread.
+    for btn in (app.queue_run_btn, app.queue_stop_btn, app.queue_clear_btn):
+        assert btn.calls == []
+
+    assert app._ui_tasks.qsize() == 1
+    app._ui_tasks.get_nowait()()
+
+    # The queued work ran on the UI thread: every button was updated, and
+    # every update happened on the UI thread (the run button gets two
+    # configure calls per refresh -- text and state -- stop/clear get one).
+    for btn in (app.queue_run_btn, app.queue_stop_btn, app.queue_clear_btn):
+        assert btn.calls
+        assert all(c == app._ui_thread_id for c in btn.calls)

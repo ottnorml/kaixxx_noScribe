@@ -2288,6 +2288,9 @@ class App(ctk.CTk):
         """Enable/disable and label the queue control buttons based on state."""
         if getattr(self, '_headless', False):
             return
+        if get_ident() != self._ui_thread_id:
+            self._dispatch_ui(self.update_queue_controls)
+            return
         try:
             has_running = len(self.queue.get_running_jobs()) > 0
             has_pending = self.queue.has_pending_jobs()
