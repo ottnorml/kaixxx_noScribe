@@ -898,7 +898,7 @@ class JobEntryFrame(ctk.CTkFrame, CTkScalingBaseClass):
             )
 
 def _init_app_state(app):
-    app._headless = False
+    app._headless = getattr(app, "_headless", False)
     app.user_models_dir = Path(config_dir) / "whisper_models"
     app.user_models_dir.mkdir(exist_ok=True)
     app.remote_backends_dir = Path(config_dir) / "backends"
@@ -4219,8 +4219,8 @@ class App(ctk.CTk):
 class HeadlessApp(App):
     def __init__(self):
         # Do not initialize Tk/CTk to avoid DISPLAY requirements
-        _init_app_state(self)
         self._headless = True
+        _init_app_state(self)
         for error in self.remote_backend_registration_errors:
             print(_remote_backend_error_details(error), file=sys.stderr)
 

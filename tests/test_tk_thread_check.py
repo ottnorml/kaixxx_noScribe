@@ -6,7 +6,7 @@ import pytest
 pytest.importorskip("tkinter")
 
 from noScribe import main
-from noScribe.main import App, install_tk_thread_check
+from noScribe.main import App, HeadlessApp, install_tk_thread_check
 
 
 def _app_stub():
@@ -94,4 +94,14 @@ def test_restore_unwraps_methods():
     restore = install_tk_thread_check(app, mode="1")
     assert restore is not None
     restore()
+    assert not getattr(main.tk.Misc.configure, "_noscribe_thread_checked", False)
+
+
+def test_headless_app_keeps_tk_thread_check_off(monkeypatch):
+    """A real HeadlessApp must keep the opt-in Tk thread check off even
+    when NOSCRIBE_TK_THREAD_CHECK is set: HeadlessApp sets _headless = True
+    before _init_app_state runs, so install_tk_thread_check must see the
+    flag and leave tkinter.Misc unwrapped."""
+    monkeypatch.setenv("NOSCRIBE_TK_THREAD_CHECK", "1")
+    HeadlessApp()
     assert not getattr(main.tk.Misc.configure, "_noscribe_thread_checked", False)
