@@ -20,6 +20,7 @@
 import argparse
 import datetime
 import html
+import inspect
 import json
 import locale
 import logging
@@ -320,6 +321,57 @@ def _show_startup_error(message: str) -> None:
     finally:
         if root is not None:
             root.destroy()
+
+def install_tk_thread_check(app, mode=None):
+    """Install an opt-in detector for Tk calls made outside the UI thread.
+
+    Tcl/Tk is not thread-safe; on macOS a cross-thread call can corrupt its
+    global state and segfault the process (see the update_queue_controls
+    crash). Enabled by the NOSCRIBE_TK_THREAD_CHECK environment variable:
+    any non-empty value logs an error with a stack trace per cross-thread
+    call, and the value "strict" raises RuntimeError instead. Pass `mode`
+    explicitly to override the environment (used by tests).
+
+    Returns a callable that restores the original tkinter.Misc methods,
+    or None when the check is disabled or the app is headless.
+    """
+    if mode is None:
+        mode = os.environ.get("NOSCRIBE_TK_THREAD_CHECK", "").strip().lower()
+    if not mode or getattr(app, "_headless", False):
+        return None
+
+    ui_thread = app._ui_thread_id
+    originals = {}
+
+    for name, func in sorted(tk.Misc.__dict__.items()):
+        if name.startswith("__") or not inspect.isfunction(func):
+            continue
+        if getattr(func, "_noscribe_thread_checked", False):
+            continue
+
+        def wrapper(self, *args, _name=name, _func=func, **kwargs):
+            if get_ident() != ui_thread:
+                if mode == "strict":
+                    raise RuntimeError(
+                        f"Tk call from non-UI thread: Misc.{_name} "
+                        f"(thread {get_ident()}, UI thread {ui_thread})"
+                    )
+                logger.error(
+                    "Tk call from non-UI thread: Misc.%s (thread %s, UI thread %s)",
+                    _name, get_ident(), ui_thread,
+                )
+                traceback.print_stack()
+            return _func(self, *args, **kwargs)
+
+        wrapper._noscribe_thread_checked = True
+        originals[name] = func
+        setattr(tk.Misc, name, wrapper)
+
+    def restore():
+        for name, func in originals.items():
+            setattr(tk.Misc, name, func)
+
+    return restore
 
 # determine optimal number of threads for faster-whisper (depending on cpu cores)
 if platform.system() == 'Windows':
@@ -873,6 +925,7 @@ def _init_app_state(app):
     app._shutting_down = False
     app._ui_thread_id = get_ident()
     app._ui_tasks = pyqueue.Queue()
+    install_tk_thread_check(app)
     app._remote_model_refresh_in_progress = False
     app._remote_model_refresh_pending = False
     app._remote_models_refreshed_at = float('-inf')
